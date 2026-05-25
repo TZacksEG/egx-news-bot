@@ -60,7 +60,7 @@ TMGH: مستفيد | درجة 80/100 | ثقة 87%
 - جهاز Linux/macOS عليه cron
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/TZacksEG/egx-news-bot.git
 cd egx-news-bot
 cp config.example.env .env
 ```
