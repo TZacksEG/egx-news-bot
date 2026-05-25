@@ -1,0 +1,29 @@
+# Secrets and local config
+.env
+.env.*
+ProjectSecrets.env
+
+# Runtime data
+data/
+logs/
+*.sqlite
+*.sqlite3
+*.db
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+
