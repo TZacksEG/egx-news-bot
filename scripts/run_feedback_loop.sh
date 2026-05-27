@@ -38,49 +38,23 @@ if [[ ! -x "${PYTHON_BIN}" ]]; then
   PYTHON_BIN="$(command -v python3)"
 fi
 
-feedback_args=(
-  -m egx_news_bot.cli collect-feedback
-  --timeout "${EGX_NEWS_BOT_FEEDBACK_TIMEOUT:-0}"
-)
-
-send_args=(
-  -m egx_news_bot.cli send-telegram
-  --limit "${EGX_NEWS_BOT_LIMIT:-20}"
-  --min-strength "${EGX_NEWS_BOT_MIN_STRENGTH:-65}"
-  --max-age-hours "${EGX_NEWS_BOT_MAX_AGE_HOURS:-72}"
-  --analysis-mode "${EGX_NEWS_BOT_ANALYSIS_MODE:-ai}"
-)
-
-case "${EGX_NEWS_BOT_INCLUDE_REVIEW:-false}" in
-  1|true|TRUE|yes|YES)
-    send_args+=(--include-review)
-    ;;
-esac
-
-COLLECT_FEEDBACK_BEFORE_SEND=1
-case "${EGX_NEWS_BOT_COLLECT_FEEDBACK_BEFORE_SEND:-true}" in
-  0|false|FALSE|no|NO)
-    COLLECT_FEEDBACK_BEFORE_SEND=0
-    ;;
-esac
+TIMEOUT_SECONDS="${EGX_NEWS_BOT_FEEDBACK_LONG_POLL_TIMEOUT:-25}"
+if ! [[ "${TIMEOUT_SECONDS}" =~ ^[0-9]+$ ]] || [[ "${TIMEOUT_SECONDS}" -lt 1 ]] || [[ "${TIMEOUT_SECONDS}" -gt 50 ]]; then
+  echo "EGX_NEWS_BOT_FEEDBACK_LONG_POLL_TIMEOUT must be a number between 1 and 50" >&2
+  exit 2
+fi
 
 if [[ "${DRY_RUN}" == "1" ]]; then
-  if [[ "${COLLECT_FEEDBACK_BEFORE_SEND}" == "1" ]]; then
-    printf 'EGX_NEWS_BOT_CONFIG=%q PYTHONPATH=%q %q' "${CONFIG_FILE}" "${APP_DIR}/src" "${PYTHON_BIN}"
-    printf ' %q' "${feedback_args[@]}"
-    printf '\n'
-  fi
   printf 'EGX_NEWS_BOT_CONFIG=%q PYTHONPATH=%q %q' "${CONFIG_FILE}" "${APP_DIR}/src" "${PYTHON_BIN}"
-  printf ' %q' "${send_args[@]}"
-  printf '\n'
+  printf ' -m egx_news_bot.cli collect-feedback --timeout %q\n' "${TIMEOUT_SECONDS}"
   exit 0
 fi
 
 cd "${APP_DIR}"
 export PYTHONPATH="${APP_DIR}/src${PYTHONPATH:+:${PYTHONPATH}}"
-if [[ "${COLLECT_FEEDBACK_BEFORE_SEND}" == "1" ]]; then
-  if ! "${PYTHON_BIN}" "${feedback_args[@]}"; then
-    echo "Telegram feedback collection failed; continuing to send alerts." >&2
+while true; do
+  if ! "${PYTHON_BIN}" -m egx_news_bot.cli collect-feedback --timeout "${TIMEOUT_SECONDS}"; then
+    echo "[$(date -Is)] Telegram feedback listener failed; retrying in 5s" >&2
+    sleep 5
   fi
-fi
-exec "${PYTHON_BIN}" "${send_args[@]}"
+done

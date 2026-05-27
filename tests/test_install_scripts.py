@@ -148,6 +148,63 @@ def test_run_pm2_loop_dry_run_prints_runner_and_interval(tmp_path):
     assert "dummy" not in result.stdout
 
 
+def test_run_feedback_loop_dry_run_prints_long_poll_command(tmp_path):
+    config = tmp_path / "egx-news-bot.env"
+    config.write_text(
+        "\n".join(
+            [
+                "TELEGRAM_BOT_TOKEN=dummy",
+                "TELEGRAM_CHAT_ID=123",
+                "OPENAI_API_KEY=sk-test",
+                "EGX_NEWS_BOT_FEEDBACK_LONG_POLL_TIMEOUT=17",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["bash", str(SCRIPTS_DIR / "run_feedback_loop.sh"), "--dry-run"],
+        cwd=APP_DIR,
+        env={"EGX_NEWS_BOT_CONFIG": str(config), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "-m egx_news_bot.cli collect-feedback --timeout 17" in result.stdout
+    assert "dummy" not in result.stdout
+
+
+def test_run_telegram_once_can_skip_feedback_collection_when_listener_is_separate(tmp_path):
+    config = tmp_path / "egx-news-bot.env"
+    config.write_text(
+        "\n".join(
+            [
+                "TELEGRAM_BOT_TOKEN=dummy",
+                "TELEGRAM_CHAT_ID=123",
+                "OPENAI_API_KEY=sk-test",
+                "EGX_NEWS_BOT_COLLECT_FEEDBACK_BEFORE_SEND=false",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["bash", str(SCRIPTS_DIR / "run_telegram_once.sh"), "--dry-run"],
+        cwd=APP_DIR,
+        env={"EGX_NEWS_BOT_CONFIG": str(config), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "-m egx_news_bot.cli collect-feedback" not in result.stdout
+    assert "-m egx_news_bot.cli send-telegram" in result.stdout
+    assert "dummy" not in result.stdout
+
+
 def test_run_telegram_once_requires_config_file(tmp_path):
     missing = tmp_path / "missing.env"
 

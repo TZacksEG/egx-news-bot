@@ -97,6 +97,7 @@ bash scripts/run_telegram_once.sh
 
 ```bash
 pm2 start scripts/run_pm2_loop.sh --name egx-news-bot
+pm2 start scripts/run_feedback_loop.sh --name egx-news-bot-feedback
 pm2 save
 ```
 
@@ -200,6 +201,7 @@ Run continuously with PM2:
 
 ```bash
 pm2 start scripts/run_pm2_loop.sh --name egx-news-bot
+pm2 start scripts/run_feedback_loop.sh --name egx-news-bot-feedback
 pm2 save
 ```
 
