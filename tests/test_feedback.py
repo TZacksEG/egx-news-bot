@@ -97,6 +97,30 @@ def test_feedback_store_tracks_only_successfully_sent_alerts(tmp_path):
     assert store.list_alerts()[0]["telegram_message_id"] == 123
 
 
+def test_feedback_store_counts_latest_vote_per_user(tmp_path):
+    store = FeedbackStore(tmp_path / "feedback.sqlite3")
+    alert_id = store.record_alert(
+        external_id="article-1",
+        source_name="Source",
+        source_url="https://example.com/article-1",
+        title="Market news",
+        event_type="contract",
+        analysis_method="ai",
+        max_strength=90,
+    )
+
+    store.record_feedback(FeedbackRecord(alert_id=alert_id, action="good", user_id=1))
+    store.record_feedback(FeedbackRecord(alert_id=alert_id, action="good", user_id=2))
+    store.record_feedback(FeedbackRecord(alert_id=alert_id, action="too_strong", user_id=1))
+
+    assert store.feedback_counts(alert_id, actions=("good", "too_strong", "not_relevant")) == {
+        "good": 1,
+        "too_strong": 1,
+        "not_relevant": 0,
+    }
+    assert store.get_alert(alert_id)["source_url"] == "https://example.com/article-1"
+
+
 def test_feedback_store_persists_telegram_update_offset(tmp_path):
     store = FeedbackStore(tmp_path / "feedback.sqlite3")
 

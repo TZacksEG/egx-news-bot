@@ -120,6 +120,37 @@ class FeedbackStore:
                 ),
             )
 
+    def get_alert(self, alert_id: int) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM alerts WHERE alert_id = ?", (alert_id,)).fetchone()
+            return dict(row) if row is not None else None
+
+    def feedback_counts(self, alert_id: int, *, actions: tuple[str, ...] | None = None) -> dict[str, int]:
+        selected_actions = actions or tuple(sorted(VALID_FEEDBACK_ACTIONS))
+        if not selected_actions:
+            return {}
+        placeholders = ", ".join("?" for _ in selected_actions)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT latest.action, COUNT(*) AS count
+                FROM feedback AS latest
+                JOIN (
+                  SELECT user_id, MAX(feedback_id) AS feedback_id
+                  FROM feedback
+                  WHERE alert_id = ?
+                  GROUP BY user_id
+                ) AS per_user
+                  ON per_user.feedback_id = latest.feedback_id
+                WHERE latest.action IN ({placeholders})
+                GROUP BY latest.action
+                """,
+                (alert_id, *selected_actions),
+            )
+            counts = {action: 0 for action in selected_actions}
+            counts.update({str(row["action"]): int(row["count"]) for row in rows})
+            return counts
+
     def list_alerts(self) -> list[dict[str, Any]]:
         with self._connect() as conn:
             return [dict(row) for row in conn.execute("SELECT * FROM alerts ORDER BY alert_id")]

@@ -205,7 +205,7 @@ def test_collect_telegram_feedback_uses_stored_offset_and_updates_it(tmp_path, c
     assert result.processed == 1
     assert store.get_telegram_update_offset() == 102
     assert store.list_feedback()[0]["action"] == "good"
-    assert client.answers == [("callback-1", "تم تسجيل رأيك")]
+    assert client.answers == [("callback-1", "تم تسجيل تصويتك")]
     assert "Processed 1 Telegram feedback callback" in captured.out
 
 

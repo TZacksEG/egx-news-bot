@@ -15,8 +15,15 @@ from egx_news_bot.telegram import (
 )
 
 TEST_USER_ID = 123456789
-SUBMITTED_KEYBOARD = {
-    "inline_keyboard": [[{"text": "تم إرسال رأيك", "callback_data": "egx_feedback_submitted"}]]
+PUBLIC_KEYBOARD = {
+    "inline_keyboard": [
+        [
+            {"text": "👍 مفيد 1", "callback_data": "egx_feedback:1:good"},
+            {"text": "⚠️ مبالغ فيه 0", "callback_data": "egx_feedback:1:too_strong"},
+        ],
+        [{"text": "⚪ غير مؤثر 0", "callback_data": "egx_feedback:1:not_relevant"}],
+        [{"text": "فتح الخبر الأصلي", "url": "https://example.com/news/1"}],
+    ]
 }
 
 
@@ -34,7 +41,7 @@ def _assessment():
     return ImpactAnalyzer().analyze(document)
 
 
-def test_notifier_sends_feedback_buttons_and_records_alert(tmp_path):
+def test_notifier_sends_public_vote_buttons_and_source_link(tmp_path):
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -51,7 +58,13 @@ def test_notifier_sends_feedback_buttons_and_records_alert(tmp_path):
     notifier.send_assessment(_assessment())
 
     payload = json.loads(requests[0].content)
-    assert payload["reply_markup"]["inline_keyboard"][0][0]["text"] == "تمام"
+    assert payload["reply_markup"]["inline_keyboard"][0][0]["text"] == "👍 مفيد 0"
+    assert payload["reply_markup"]["inline_keyboard"][0][1]["text"] == "⚠️ مبالغ فيه 0"
+    assert payload["reply_markup"]["inline_keyboard"][1][0]["text"] == "⚪ غير مؤثر 0"
+    assert payload["reply_markup"]["inline_keyboard"][2][0] == {
+        "text": "فتح الخبر الأصلي",
+        "url": "https://example.com/news/1",
+    }
     callback_data = payload["reply_markup"]["inline_keyboard"][0][0]["callback_data"]
     parsed = parse_feedback_callback(callback_data)
     assert parsed is not None
@@ -86,7 +99,7 @@ def test_parse_feedback_callback_rejects_unknown_payloads():
     assert parse_feedback_callback("egx_feedback:123:unknown") is None
 
 
-def test_telegram_client_fetches_callback_updates_answers_and_removes_buttons():
+def test_telegram_client_fetches_callback_updates_answers_and_edits_keyboard():
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -119,8 +132,8 @@ def test_telegram_client_fetches_callback_updates_answers_and_removes_buttons():
     )
 
     updates = client.get_updates(offset=50, timeout=3)
-    client.answer_callback_query("callback-1", "تم تسجيل رأيك")
-    client.edit_message_reply_markup(chat_id=123, message_id=42, reply_markup=SUBMITTED_KEYBOARD)
+    client.answer_callback_query("callback-1", "تم تسجيل تصويتك")
+    client.edit_message_reply_markup(chat_id=123, message_id=42, reply_markup=PUBLIC_KEYBOARD)
 
     assert updates[0]["update_id"] == 51
     get_payload = json.loads(requests[0].content)
@@ -130,12 +143,12 @@ def test_telegram_client_fetches_callback_updates_answers_and_removes_buttons():
         "allowed_updates": ["callback_query"],
     }
     answer_payload = json.loads(requests[1].content)
-    assert answer_payload == {"callback_query_id": "callback-1", "text": "تم تسجيل رأيك"}
+    assert answer_payload == {"callback_query_id": "callback-1", "text": "تم تسجيل تصويتك"}
     edit_payload = json.loads(requests[2].content)
     assert edit_payload == {
         "chat_id": 123,
         "message_id": 42,
-        "reply_markup": SUBMITTED_KEYBOARD,
+        "reply_markup": PUBLIC_KEYBOARD,
     }
 
 
@@ -185,7 +198,7 @@ def test_process_feedback_updates_records_callbacks_and_returns_next_offset(tmp_
                         "id": "callback-1",
                         "from": {"id": TEST_USER_ID, "username": "tester"},
                         "message": {"chat": {"id": 123}, "message_id": 42},
-                        "data": f"egx_feedback:{alert_id}:too_weak",
+                        "data": f"egx_feedback:{alert_id}:too_strong",
                 },
             },
             {"update_id": 101, "message": {"text": "ignored"}},
@@ -208,12 +221,27 @@ def test_process_feedback_updates_records_callbacks_and_returns_next_offset(tmp_
     assert result.ignored == 2
     assert result.next_offset == 103
     assert feedback[0]["alert_id"] == alert_id
-    assert feedback[0]["action"] == "too_weak"
+    assert feedback[0]["action"] == "too_strong"
     assert feedback[0]["user_id"] == TEST_USER_ID
     assert feedback[0]["username"] == "tester"
     assert feedback[0]["message_id"] == 42
-    assert answers == [("callback-1", "تم تسجيل رأيك")]
-    assert edits == [(123, 42, SUBMITTED_KEYBOARD)]
+    assert answers == [("callback-1", "تم تسجيل تصويتك")]
+    assert edits == [
+        (
+            123,
+            42,
+            {
+                "inline_keyboard": [
+                    [
+                        {"text": "👍 مفيد 0", "callback_data": f"egx_feedback:{alert_id}:good"},
+                        {"text": "⚠️ مبالغ فيه 1", "callback_data": f"egx_feedback:{alert_id}:too_strong"},
+                    ],
+                    [{"text": "⚪ غير مؤثر 0", "callback_data": f"egx_feedback:{alert_id}:not_relevant"}],
+                    [{"text": "فتح الخبر الأصلي", "url": "https://example.com/news/1"}],
+                ]
+            },
+        )
+    ]
 
 
 def test_process_feedback_updates_answers_submitted_keyboard_without_new_feedback(tmp_path):
@@ -248,7 +276,7 @@ def test_process_feedback_updates_answers_submitted_keyboard_without_new_feedbac
     assert result.ignored == 1
     assert result.next_offset == 151
     assert store.list_feedback() == []
-    assert answers == [("callback-submitted", "تم تسجيل رأيك قبل كده")]
+    assert answers == [("callback-submitted", "تم تسجيل تصويتك قبل كده")]
     assert edits == []
 
 
@@ -293,4 +321,19 @@ def test_process_feedback_updates_keeps_recorded_feedback_when_callback_answer_i
     assert result.processed == 1
     assert result.next_offset == 201
     assert feedback[0]["action"] == "wrong"
-    assert edits == [(123, 55, SUBMITTED_KEYBOARD)]
+    assert edits == [
+        (
+            123,
+            55,
+            {
+                "inline_keyboard": [
+                    [
+                        {"text": "👍 مفيد 0", "callback_data": f"egx_feedback:{alert_id}:good"},
+                        {"text": "⚠️ مبالغ فيه 0", "callback_data": f"egx_feedback:{alert_id}:too_strong"},
+                    ],
+                    [{"text": "⚪ غير مؤثر 0", "callback_data": f"egx_feedback:{alert_id}:not_relevant"}],
+                    [{"text": "فتح الخبر الأصلي", "url": "https://example.com/news/2"}],
+                ]
+            },
+        )
+    ]

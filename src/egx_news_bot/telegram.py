@@ -12,6 +12,12 @@ from egx_news_bot.models import NewsImpactAssessment
 NEWS_SEPARATOR = "-------------------------------------------------------"
 RTL_MARK = "\u200f"
 SUBMITTED_CALLBACK_DATA = "egx_feedback_submitted"
+PUBLIC_VOTE_ACTIONS = ("good", "too_strong", "not_relevant")
+PUBLIC_VOTE_LABELS = {
+    "good": "👍 مفيد",
+    "too_strong": "⚠️ مبالغ فيه",
+    "not_relevant": "⚪ غير مؤثر",
+}
 
 _DIRECTION_LABELS = {
     "beneficiary": "مستفيد",
@@ -207,7 +213,14 @@ class TelegramNotifier:
         message = render_telegram_message(assessment)
         if alert_id is None:
             return self._client.send_message(message)
-        result = self._client.send_message(message, reply_markup=feedback_keyboard(alert_id))
+        result = self._client.send_message(
+            message,
+            reply_markup=public_vote_keyboard(
+                alert_id,
+                source_url=assessment.document.source_url,
+                counts=self._feedback_store.feedback_counts(alert_id, actions=PUBLIC_VOTE_ACTIONS),
+            ),
+        )
         self._feedback_store.mark_alert_sent(alert_id, result.message_id if result is not None else None)
         return result
 
@@ -221,7 +234,38 @@ class TelegramNotifier:
         )
 
 
+def public_vote_keyboard(
+    alert_id: int,
+    *,
+    source_url: str | None = None,
+    counts: Mapping[str, int] | None = None,
+) -> dict:
+    rows = [
+        [
+            _public_vote_button(alert_id, "good", counts),
+            _public_vote_button(alert_id, "too_strong", counts),
+        ],
+        [
+            _public_vote_button(alert_id, "not_relevant", counts),
+        ],
+    ]
+    if source_url:
+        rows.append([{"text": "فتح الخبر الأصلي", "url": source_url}])
+    return {"inline_keyboard": rows}
+
+
+def _public_vote_button(alert_id: int, action: str, counts: Mapping[str, int] | None = None) -> dict[str, str]:
+    count = counts.get(action, 0) if counts is not None else 0
+    label = PUBLIC_VOTE_LABELS[action]
+    return {"text": f"{label} {count}", "callback_data": f"egx_feedback:{alert_id}:{action}"}
+
+
 def feedback_keyboard(alert_id: int) -> dict:
+    """Backward-compatible alias for older callers/tests."""
+    return public_vote_keyboard(alert_id)
+
+
+def admin_feedback_keyboard(alert_id: int) -> dict:
     return {
         "inline_keyboard": [
             [
@@ -285,7 +329,7 @@ def process_feedback_updates(
         if data == SUBMITTED_CALLBACK_DATA:
             if isinstance(callback_id, str):
                 try:
-                    client.answer_callback_query(callback_id, "تم تسجيل رأيك قبل كده")
+                    client.answer_callback_query(callback_id, "تم تسجيل تصويتك قبل كده")
                 except TelegramDeliveryError:
                     pass
             ignored += 1
@@ -311,7 +355,7 @@ def process_feedback_updates(
         )
         if isinstance(callback_id, str):
             try:
-                client.answer_callback_query(callback_id, "تم تسجيل رأيك")
+                client.answer_callback_query(callback_id, "تم تسجيل تصويتك")
             except TelegramDeliveryError:
                 pass
         chat_id = _message_chat_id(message)
@@ -320,7 +364,11 @@ def process_feedback_updates(
                 client.edit_message_reply_markup(
                     chat_id=chat_id,
                     message_id=message_id,
-                    reply_markup=feedback_submitted_keyboard(),
+                    reply_markup=public_vote_keyboard(
+                        parsed.alert_id,
+                        source_url=_alert_source_url(store, parsed.alert_id),
+                        counts=store.feedback_counts(parsed.alert_id, actions=PUBLIC_VOTE_ACTIONS),
+                    ),
                 )
             except TelegramDeliveryError:
                 pass
@@ -336,6 +384,14 @@ def _message_chat_id(message: Any) -> int | str | None:
         return None
     chat_id = chat.get("id")
     return chat_id if isinstance(chat_id, int | str) else None
+
+
+def _alert_source_url(store: FeedbackStore, alert_id: int) -> str | None:
+    alert = store.get_alert(alert_id)
+    if alert is None:
+        return None
+    source_url = alert.get("source_url")
+    return source_url if isinstance(source_url, str) and source_url else None
 
 
 def _telegram_error_message(response: httpx.Response, method: str) -> str:

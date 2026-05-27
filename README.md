@@ -25,7 +25,7 @@ Telegram bot that watches Egyptian business news and uses AI to estimate the lik
 - يلم الأخبار المهمة بسرعة بدل ما تتابع مواقع كتير يدوي
 - يربط الخبر بالقطاع والسهم المحتمل تأثره
 - يديك درجة قوة وتأثير علشان تعرف هل الخبر يستاهل متابعة ولا لا
-- يحفظ رأيك من أزرار تيليجرام علشان تحسن جودة التحليل مع الوقت
+- يعرض تصويت الجمهور على كل خبر: مفيد، مبالغ فيه، أو غير مؤثر
 
 ### شكل التنبيه
 
@@ -150,7 +150,7 @@ Each report shows:
 - saves time by scanning many Egyptian business sources automatically
 - connects news to possible EGX sectors and stocks
 - ranks news by impact strength
-- keeps a feedback loop through Telegram buttons so bad calls can be reviewed and improved
+- shows public vote counts on each alert: useful, exaggerated, or no market impact
 
 ### Quick Install
 
@@ -209,17 +209,17 @@ Remove the cron job:
 bash scripts/uninstall_cron.sh
 ```
 
-### Telegram Feedback Buttons
+### Telegram Public Voting
 
 Every alert includes buttons:
 
 ```text
-تمام | غلط
-مبالغ فيه | أضعف من اللازم
-مش متعلق بالبورصة
+👍 مفيد | ⚠️ مبالغ فيه
+⚪ غير مؤثر
+فتح الخبر الأصلي
 ```
 
-The feedback is stored locally in SQLite under `data/feedback.sqlite3`. It is not sent anywhere else by default.
+Votes are stored locally in SQLite under `data/feedback.sqlite3`. Each user has one current vote per alert in the public counts, so changing a vote moves the count instead of double-counting. The source button opens the original article.
 
 ### Configuration
 
