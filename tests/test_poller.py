@@ -64,6 +64,41 @@ def test_poll_once_fetches_feed_and_scores_documents():
     assert result.assessments[0].event_type == "interest_rate_cut"
 
 
+def test_poll_once_filters_documents_before_analysis():
+    class CountingAnalyzer:
+        analyzed = 0
+
+        def analyze(self, document):
+            self.analyzed += 1
+            raise AssertionError("filtered documents should not be analyzed")
+
+    analyzer = CountingAnalyzer()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=RSS_XML)
+
+    poller = FeedPoller(
+        feeds=(
+            NewsFeedConfig(
+                name="Test Feed",
+                url="https://example.com/feed",
+                language="ar",
+                credibility=0.9,
+                tags=("macro",),
+            ),
+        ),
+        analyzer=analyzer,
+        document_filter=lambda _document: False,
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = poller.poll_once(limit=1, max_age_hours=24 * 365)
+
+    assert result.documents == ()
+    assert result.assessments == ()
+    assert analyzer.analyzed == 0
+
+
 def test_watch_repeats_polling_without_sleeping_when_iterations_are_limited():
     calls = 0
 

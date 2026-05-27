@@ -119,6 +119,35 @@ def test_run_telegram_once_dry_run_uses_configured_alert_options(tmp_path):
     assert "dummy" not in result.stdout
 
 
+def test_run_pm2_loop_dry_run_prints_runner_and_interval(tmp_path):
+    config = tmp_path / "egx-news-bot.env"
+    config.write_text(
+        "\n".join(
+            [
+                "TELEGRAM_BOT_TOKEN=dummy",
+                "TELEGRAM_CHAT_ID=123",
+                "OPENAI_API_KEY=sk-test",
+                "EGX_NEWS_BOT_CRON_INTERVAL=3",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["bash", str(SCRIPTS_DIR / "run_pm2_loop.sh"), "--dry-run"],
+        cwd=APP_DIR,
+        env={"EGX_NEWS_BOT_CONFIG": str(config), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert str(SCRIPTS_DIR / "run_telegram_once.sh") in result.stdout
+    assert "interval_seconds=180" in result.stdout
+    assert "dummy" not in result.stdout
+
+
 def test_run_telegram_once_requires_config_file(tmp_path):
     missing = tmp_path / "missing.env"
 

@@ -93,6 +93,13 @@ bash scripts/install_cron.sh --interval-minutes 2
 bash scripts/run_telegram_once.sh
 ```
 
+تشغيل مستمر باستخدام PM2:
+
+```bash
+pm2 start scripts/run_pm2_loop.sh --name egx-news-bot
+pm2 save
+```
+
 إلغاء التشغيل التلقائي:
 
 ```bash
@@ -120,7 +127,7 @@ bash scripts/uninstall_cron.sh
 
 ### مهم
 
-البوت مش بيقول لك اشتري أو بيع كأمر مباشر. هو يعطي إشارة بحث عامة بناء على الخبر. قرار التداول مسؤوليتك، ولازم تراجع السعر، السيولة، التحليل الفني، المخاطر، وإدارة رأس المال.
+البوت لا يقول لك اشتري أو بيع كأمر مباشر. هو يعطي إشارة بحث عامة بناء على الخبر. قرار التداول مسؤوليتك، ولازم تراجع السعر، السيولة، التحليل الفني، المخاطر، وإدارة رأس المال.
 
 ## English
 
@@ -156,7 +163,7 @@ Requirements:
 - Linux/macOS machine with cron
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/TZacksEG/egx-news-bot.git
 cd egx-news-bot
 cp config.example.env .env
 ```
@@ -187,6 +194,13 @@ Run once for testing:
 
 ```bash
 bash scripts/run_telegram_once.sh
+```
+
+Run continuously with PM2:
+
+```bash
+pm2 start scripts/run_pm2_loop.sh --name egx-news-bot
+pm2 save
 ```
 
 Remove the cron job:

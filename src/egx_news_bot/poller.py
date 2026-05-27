@@ -24,11 +24,13 @@ class FeedPoller:
         self,
         feeds: tuple[NewsFeedConfig, ...] = DEFAULT_FEEDS,
         analyzer: ImpactAnalyzer | None = None,
+        document_filter: Callable[[NewsDocument], bool] | None = None,
         timeout: float = 20.0,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self._feeds = feeds
         self._analyzer = analyzer or ImpactAnalyzer()
+        self._document_filter = document_filter
         self._timeout = timeout
         self._transport = transport
 
@@ -61,6 +63,8 @@ class FeedPoller:
                     if document.published_at is not None and document.published_at < cutoff:
                         continue
                     if document.published_at is not None and document.published_at > future_cutoff:
+                        continue
+                    if self._document_filter is not None and not self._document_filter(document):
                         continue
                     documents.append(document)
                     assessments.append(self._analyzer.analyze(document))

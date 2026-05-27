@@ -57,6 +57,27 @@ def test_notifier_sends_feedback_buttons_and_records_alert(tmp_path):
     assert parsed is not None
     assert parsed.action == "good"
     assert store.list_alerts()[0]["alert_id"] == parsed.alert_id
+    assert store.list_alerts()[0]["telegram_message_id"] == 42
+
+
+def test_notifier_skips_previously_sent_alert_without_posting(tmp_path):
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 43}})
+
+    store = FeedbackStore(tmp_path / "feedback.sqlite3")
+    client = TelegramClient(
+        TelegramConfig(bot_token="token-123", chat_id="-100123"),
+        transport=httpx.MockTransport(handler),
+    )
+    notifier = TelegramNotifier(client, feedback_store=store)
+
+    assert notifier.send_assessment(_assessment()) is not None
+    assert notifier.send_assessment(_assessment()) is None
+
+    assert len(requests) == 1
 
 
 def test_parse_feedback_callback_rejects_unknown_payloads():

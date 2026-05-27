@@ -75,6 +75,32 @@ class FeedbackStore:
             row = conn.execute("SELECT alert_id FROM alerts WHERE dedupe_key = ?", (key,)).fetchone()
             return int(row["alert_id"])
 
+    def has_sent_alert(self, *, external_id: str | None, source_url: str, title: str) -> bool:
+        key = _alert_dedupe_key(external_id=external_id, source_url=source_url, title=title)
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT telegram_message_id
+                FROM alerts
+                WHERE dedupe_key = ?
+                """,
+                (key,),
+            ).fetchone()
+        return row is not None and row["telegram_message_id"] is not None
+
+    def mark_alert_sent(self, alert_id: int, message_id: int | None) -> None:
+        if message_id is None:
+            return
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE alerts
+                SET telegram_message_id = ?, sent_at = ?
+                WHERE alert_id = ?
+                """,
+                (message_id, time(), alert_id),
+            )
+
     def record_feedback(self, record: FeedbackRecord) -> None:
         if record.action not in VALID_FEEDBACK_ACTIONS:
             raise ValueError(f"Unsupported feedback action: {record.action}")
@@ -142,11 +168,15 @@ class FeedbackStore:
                   event_type TEXT NOT NULL,
                   analysis_method TEXT NOT NULL,
                   max_strength INTEGER NOT NULL,
+                  telegram_message_id INTEGER,
+                  sent_at REAL,
                   created_at REAL NOT NULL,
                   updated_at REAL NOT NULL
                 )
                 """
             )
+            _ensure_column(conn, "alerts", "telegram_message_id", "INTEGER")
+            _ensure_column(conn, "alerts", "sent_at", "REAL")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS feedback (
@@ -182,3 +212,13 @@ def default_feedback_db_path(env: dict[str, str] | None = None) -> Path:
     if configured:
         return Path(configured).expanduser()
     return Path(__file__).resolve().parents[2] / "data" / "feedback.sqlite3"
+
+
+def _alert_dedupe_key(*, external_id: str | None, source_url: str, title: str) -> str:
+    return external_id or source_url or title
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, column_type: str) -> None:
+    columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")

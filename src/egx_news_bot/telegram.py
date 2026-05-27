@@ -193,6 +193,8 @@ class TelegramNotifier:
     def send_assessment(self, assessment: NewsImpactAssessment) -> TelegramSendResult | None:
         alert_id = None
         if self._feedback_store is not None:
+            if self.has_sent_assessment(assessment):
+                return None
             alert_id = self._feedback_store.record_alert(
                 external_id=assessment.document.external_id,
                 source_name=assessment.document.source_name,
@@ -205,7 +207,18 @@ class TelegramNotifier:
         message = render_telegram_message(assessment)
         if alert_id is None:
             return self._client.send_message(message)
-        return self._client.send_message(message, reply_markup=feedback_keyboard(alert_id))
+        result = self._client.send_message(message, reply_markup=feedback_keyboard(alert_id))
+        self._feedback_store.mark_alert_sent(alert_id, result.message_id if result is not None else None)
+        return result
+
+    def has_sent_assessment(self, assessment: NewsImpactAssessment) -> bool:
+        if self._feedback_store is None:
+            return False
+        return self._feedback_store.has_sent_alert(
+            external_id=assessment.document.external_id,
+            source_url=assessment.document.source_url,
+            title=assessment.document.title,
+        )
 
 
 def feedback_keyboard(alert_id: int) -> dict:

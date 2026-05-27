@@ -68,6 +68,35 @@ def test_feedback_store_reuses_alert_id_for_same_external_id(tmp_path):
     assert alerts[0]["max_strength"] == 90
 
 
+def test_feedback_store_tracks_only_successfully_sent_alerts(tmp_path):
+    store = FeedbackStore(tmp_path / "feedback.sqlite3")
+
+    alert_id = store.record_alert(
+        external_id="article-1",
+        source_name="Source",
+        source_url="https://example.com/article-1",
+        title="Market news",
+        event_type="contract",
+        analysis_method="ai",
+        max_strength=90,
+    )
+
+    assert not store.has_sent_alert(
+        external_id="article-1",
+        source_url="https://example.com/article-1",
+        title="Market news",
+    )
+
+    store.mark_alert_sent(alert_id, 123)
+
+    assert store.has_sent_alert(
+        external_id="article-1",
+        source_url="https://example.com/article-1",
+        title="Market news",
+    )
+    assert store.list_alerts()[0]["telegram_message_id"] == 123
+
+
 def test_feedback_store_persists_telegram_update_offset(tmp_path):
     store = FeedbackStore(tmp_path / "feedback.sqlite3")
 

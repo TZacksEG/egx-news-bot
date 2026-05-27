@@ -103,7 +103,14 @@ def _run_send_telegram(args: argparse.Namespace) -> None:
     with TelegramClient(config) as client:
         feedback_store = build_feedback_store(args.feedback_db)
         send_telegram_from_poll(
-            poller=FeedPoller(analyzer=build_analyzer(args.analysis_mode)),
+            poller=FeedPoller(
+                analyzer=build_analyzer(args.analysis_mode),
+                document_filter=lambda document: not feedback_store.has_sent_alert(
+                    external_id=document.external_id,
+                    source_url=document.source_url,
+                    title=document.title,
+                ),
+            ),
             notifier=TelegramNotifier(client, feedback_store=feedback_store),
             limit=args.limit,
             max_age_hours=args.max_age_hours,
