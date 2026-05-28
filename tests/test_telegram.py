@@ -40,26 +40,30 @@ def _assessment():
 def test_render_telegram_message_shows_news_impact_and_evidence():
     message = render_telegram_message(_assessment())
 
-    assert message.startswith("\u200fملخص الخبر:")
-    assert "تقرير تأثير الخبر على البورصة المصرية" in message
+    assert message.startswith("\u200fملخص الخبر:\n")
+    assert "تقرير تأثير الخبر على البورصة المصرية" not in message
     assert "طلعت مصطفى توقع عقد تطوير مشروع جديد بقيمة 20 مليار جنيه" in message
-    assert "نوع الحدث: عقد أو مشروع جديد" in message
+    assert message.index("تأثير الخبر:") < message.index("السهم المرتبط:")
+    assert message.index("السهم المرتبط:") < message.index("القطاع المتأثر:")
+    assert message.index("القطاع المتأثر:") < message.index("إشارة عامة:")
+    assert message.index("إشارة عامة:") < message.index("سبب التقييم:")
+    assert message.index("سبب التقييم:") < message.index("المصدر:")
+    assert message.index("المصدر:") < message.index("نوع الخبر:")
+    assert "نوع الخبر:\n\u200fعقد أو مشروع جديد" in message
     assert "طريقة التحليل" not in message
     assert "الرابط:" not in message
-    assert "تأثير عام على السوق: لا" in message
-    assert "صلة الخبر بالبورصة: مرتبط بسهم مقيد" in message
     assert "مراجعة بشرية" not in message
-    assert "تأثير القطاعات" in message
-    assert "العقارات: مستفيد | درجة 76/100 | ثقة 85%" in message
-    assert "تأثير الأسهم" in message
-    assert "مجموعة طلعت مصطفى القابضة: مستفيد | درجة 80/100 | ثقة 87%" in message
-    assert "التقييم: إيجابي للسهم" in message
-    assert "إشارة عامة: أقرب للشراء/المتابعة، مش توصية شراء" in message
-    assert "ليه: الشركة مذكورة بوضوح في خبر له تأثير مباشر عليها." in message
-    assert "الدليل:" in message
-    assert "المصدر: مصدر اقتصادي" in message
+    assert "تأثير الخبر:\n\u200fإيجابي للسهم\n\u200fجيد للسهم" in message
+    assert "السهم المرتبط:\n\u200fمجموعة طلعت مصطفى القابضة" in message
+    assert "القطاع المتأثر:\n\u200fالعقارات" in message
+    assert "الاتجاه: مستفيد" in message
+    assert "قوة التأثير: 80/100" in message
+    assert "الثقة: 87%" in message
+    assert "إشارة عامة:\n\u200fأقرب للشراء/المتابعة" in message
+    assert "مش توصية شراء أو بيع." in message
+    assert "سبب التقييم:\n\u200fالشركة مذكورة بوضوح في خبر له تأثير مباشر عليها." in message
+    assert "المصدر:\n\u200fمصدر اقتصادي" in message
     assert "https://example.com/news/1" not in message
-    assert "ملاحظة: ده تحليل آلي عام، مش توصية استثمارية شخصية." in message
     assert message.endswith(NEWS_SEPARATOR)
     assert re.search(r"[A-Za-z]", message) is None
 
@@ -120,13 +124,15 @@ def test_render_telegram_message_shows_negative_stock_signal_without_sell_advice
 
     message = render_telegram_message(assessment)
 
-    assert "العربية للأسمنت: متضرر | درجة 74/100 | ثقة 83%" in message
-    assert "التقييم: سلبي للسهم" in message
-    assert "إشارة عامة: أقرب للبيع/تخفيف المخاطر، مش توصية بيع" in message
+    assert "السهم المرتبط:\n\u200fالعربية للأسمنت" in message
+    assert "الاتجاه: متضرر" in message
+    assert "قوة التأثير: 74/100" in message
+    assert "تأثير الخبر:\n\u200fسلبي للسهم\n\u200fسيئ للسهم" in message
+    assert "إشارة عامة:\n\u200fأقرب للبيع/تخفيف المخاطر" in message
     assert "بيع" in message
     assert "The company" not in message
     assert "ARCC" not in message
-    assert "التقييم: إيجابي للسهم" not in message
+    assert "إيجابي للسهم" not in message
     assert re.search(r"[A-Za-z]", message) is None
 
 
@@ -278,6 +284,6 @@ def test_telegram_notifier_sends_rendered_assessment_message():
     notifier.send_assessment(_assessment())
 
     assert len(sent) == 1
-    assert sent[0].startswith("\u200fملخص الخبر:")
-    assert "تقرير تأثير الخبر على البورصة المصرية" in sent[0]
-    assert "مجموعة طلعت مصطفى القابضة: مستفيد" in sent[0]
+    assert sent[0].startswith("\u200fملخص الخبر:\n")
+    assert "تقرير تأثير الخبر على البورصة المصرية" not in sent[0]
+    assert "السهم المرتبط:\n\u200fمجموعة طلعت مصطفى القابضة" in sent[0]

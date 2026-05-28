@@ -482,113 +482,141 @@ def _telegram_error_detail(response: httpx.Response) -> str | None:
 def render_telegram_message(assessment: NewsImpactAssessment) -> str:
     document = assessment.document
     headline = _public_headline(assessment)
+    verdict, good_bad, signal = _assessment_signal(assessment)
+    target = _primary_target(assessment)
+    direction = _direction_label(target.direction) if target is not None else "غير واضح"
+    strength = target.strength if target is not None else 0
+    confidence = _percent(target.confidence) if target is not None else "0%"
     lines = [
-        f"ملخص الخبر: {headline}",
+        "ملخص الخبر:",
+        headline,
         "",
-        "تقرير تأثير الخبر على البورصة المصرية",
-        f"المصدر: {_source_label(document.source_name)}",
-        f"نوع الحدث: {_event_type_label(assessment.event_type)}",
-        f"صلة الخبر بالبورصة: {_impact_scope_label(assessment.impact_scope)}",
-        f"تأثير عام على السوق: {_yes_no(assessment.market_wide)}",
+        "تأثير الخبر:",
+        verdict,
+        good_bad,
+        "",
+        "السهم المرتبط:",
+        _stock_label(assessment),
+        "",
+        "القطاع المتأثر:",
+        _sector_summary_label(assessment),
+        f"الاتجاه: {direction}",
+        f"قوة التأثير: {strength}/100",
+        f"الثقة: {confidence}",
+        "",
+        "إشارة عامة:",
+        signal,
+        "مش توصية شراء أو بيع.",
+        "",
+        "سبب التقييم:",
+        _impact_reason(assessment),
+        "",
+        "المصدر:",
+        _source_label(document.source_name),
+        "نوع الخبر:",
+        _event_type_label(assessment.event_type),
     ]
-    if assessment.summary and _is_public_arabic(assessment.summary) and assessment.summary != headline:
-        lines.append(f"الملخص: {assessment.summary}")
-
-    lines.extend(_recommendation_lines(assessment))
-
-    if assessment.sectors:
-        lines.extend(["", "تأثير القطاعات"])
-        lines.extend(_sector_line(sector) for sector in assessment.sectors[:5])
-
-    if assessment.stocks:
-        lines.extend(["", "تأثير الأسهم"])
-        for stock in assessment.stocks[:8]:
-            label = stock.company_name_ar or "شركة مصرية مقيدة"
-            lines.append(
-                f"{label}: {_direction_label(stock.direction)} | درجة {stock.strength}/100 | "
-                f"ثقة {_percent(stock.confidence)}"
-            )
-            rationale = _public_text(stock.rationale)
-            if rationale:
-                lines.append(f"ليه: {rationale}")
-
-    evidence = _first_evidence(assessment)
-    if evidence:
-        lines.extend(["", "الدليل:", evidence])
 
     lines.extend(["", NEWS_SEPARATOR])
     return "\n".join(_rtl(line) for line in lines)
 
 
-def _sector_line(sector) -> str:
-    return (
-        f"{_sector_label(sector.sector)}: {_direction_label(sector.direction)} | درجة {sector.strength}/100 | "
-        f"ثقة {_percent(sector.confidence)}"
-    )
+def _primary_stock(assessment: NewsImpactAssessment):
+    return max(assessment.stocks, key=lambda item: item.strength, default=None)
 
 
-def _recommendation_lines(assessment: NewsImpactAssessment) -> list[str]:
-    stock = max(assessment.stocks, key=lambda item: item.strength, default=None)
-    sector = max(assessment.sectors, key=lambda item: item.strength, default=None)
+def _primary_sector(assessment: NewsImpactAssessment):
+    return max(assessment.sectors, key=lambda item: item.strength, default=None)
+
+
+def _primary_target(assessment: NewsImpactAssessment):
+    stock = _primary_stock(assessment)
+    if stock is not None:
+        return stock
+    return _primary_sector(assessment)
+
+
+def _assessment_signal(assessment: NewsImpactAssessment) -> tuple[str, str, str]:
+    stock = _primary_stock(assessment)
+    sector = _primary_sector(assessment)
     target = stock or sector
     if target is None:
-        verdict = "ضعيف أو غير واضح"
-        good_bad = "غير واضح للسهم"
-        signal = "متابعة فقط، مفيش إشارة شراء أو بيع واضحة"
-    else:
-        is_stock = stock is not None
-        verdict, good_bad, signal = _trading_signal(
-            direction=target.direction,
-            strength=target.strength,
-            is_stock=is_stock,
-        )
-    return [
-        "",
-        "الحكم والتصرف",
-        f"التقييم: {verdict}",
-        f"هل الخبر جيد ولا سيئ؟ {good_bad}",
-        f"إشارة عامة: {signal}",
-        "ملاحظة: ده تحليل آلي عام، مش توصية استثمارية شخصية.",
-    ]
+        return "ضعيف أو غير واضح", "غير واضح للسهم", "متابعة فقط"
+    return _trading_signal(
+        direction=target.direction,
+        strength=target.strength,
+        is_stock=stock is not None,
+    )
 
 
 def _trading_signal(*, direction: str, strength: int, is_stock: bool) -> tuple[str, str, str]:
     subject = "للسهم" if is_stock else "للقطاع"
     if direction == "beneficiary" and strength >= 65:
-        return f"إيجابي {subject}", f"جيد {subject}", "أقرب للشراء/المتابعة، مش توصية شراء"
+        return f"إيجابي {subject}", f"جيد {subject}", "أقرب للشراء/المتابعة"
     if direction == "loser" and strength >= 65:
-        return f"سلبي {subject}", f"سيئ {subject}", "أقرب للبيع/تخفيف المخاطر، مش توصية بيع"
+        return f"سلبي {subject}", f"سيئ {subject}", "أقرب للبيع/تخفيف المخاطر"
     if direction == "mixed":
-        return f"مختلط {subject}", f"مختلط {subject}", "انتظار/متابعة، مفيش إشارة شراء أو بيع واضحة"
-    return "ضعيف أو غير واضح", f"غير واضح {subject}", "انتظار/متابعة، مفيش إشارة شراء أو بيع واضحة"
+        return f"مختلط {subject}", f"مختلط {subject}", "انتظار/متابعة"
+    return "ضعيف أو غير واضح", f"غير واضح {subject}", "انتظار/متابعة"
+
+
+def _stock_label(assessment: NewsImpactAssessment) -> str:
+    names: list[str] = []
+    seen: set[str] = set()
+    for stock in sorted(assessment.stocks, key=lambda item: item.strength, reverse=True)[:3]:
+        name = _public_text(stock.company_name_ar)
+        if name and name not in seen:
+            names.append(name)
+            seen.add(name)
+    if not names:
+        return "مفيش سهم مصري مؤكد"
+    return "، ".join(names)
+
+
+def _sector_summary_label(assessment: NewsImpactAssessment) -> str:
+    sector = _primary_sector(assessment)
+    if sector is not None:
+        return _sector_label(sector.sector)
+    stock = _primary_stock(assessment)
+    if stock is not None:
+        return _sector_label(stock.sector)
+    return "غير واضح"
+
+
+def _impact_reason(assessment: NewsImpactAssessment) -> str:
+    stock = _primary_stock(assessment)
+    if stock is not None:
+        rationale = _public_text(stock.rationale)
+        if rationale:
+            return rationale
+        if stock.direction == "loser":
+            return "الخبر فيه ضغط محتمل على الشركة أو هوامش الربح."
+        if stock.direction == "beneficiary":
+            return "الخبر مرتبط بنشاط الشركة وقد يدعم الإيرادات أو التقييم."
+        return "الشركة مرتبطة بالخبر، لكن اتجاه التأثير محتاج متابعة."
+
+    sector = _primary_sector(assessment)
+    if sector is not None:
+        rationale = _public_text(sector.rationale)
+        if rationale:
+            return rationale
+        if sector.direction == "loser":
+            return "الخبر ممكن يضغط على شركات القطاع أو تكاليف التشغيل."
+        if sector.direction == "beneficiary":
+            return "الخبر ممكن يدعم الطلب أو أرباح شركات القطاع."
+        return "التأثير على القطاع موجود لكن اتجاهه مش محسوم."
+
+    return "مفيش رابط واضح بسهم مصري مقيد من بيانات الخبر."
 
 
 def _direction_label(direction: str) -> str:
     return _DIRECTION_LABELS.get(direction, "غير واضح")
 
 
-def _yes_no(value: bool) -> str:
-    return "نعم" if value else "لا"
-
-
 def _rtl(line: str) -> str:
     if not line or line == NEWS_SEPARATOR:
         return line
     return f"{RTL_MARK}{line}"
-
-
-def _first_evidence(assessment: NewsImpactAssessment) -> str | None:
-    for stock in assessment.stocks:
-        if stock.evidence:
-            text = _evidence_text(stock.evidence[0])
-            if text:
-                return text
-    for sector in assessment.sectors:
-        if sector.evidence:
-            text = _evidence_text(sector.evidence[0])
-            if text:
-                return text
-    return None
 
 
 def _public_headline(assessment: NewsImpactAssessment) -> str:
@@ -610,10 +638,6 @@ def _public_text(value: str | None) -> str | None:
     return text
 
 
-def _is_public_arabic(value: str) -> bool:
-    return _public_text(value) is not None
-
-
 def _source_label(source_name: str) -> str:
     return _SOURCE_LABELS.get(source_name, "مصدر اقتصادي")
 
@@ -625,18 +649,6 @@ def _event_type_label(event_type: str) -> str:
 def _sector_label(sector: str) -> str:
     canonical = canonical_sector(sector) or sector
     return _SECTOR_LABELS.get(canonical, "قطاع غير مؤكد")
-
-
-def _impact_scope_label(scope: str) -> str:
-    if scope == "stock_related":
-        return "مرتبط بسهم مقيد"
-    if scope == "sector_only":
-        return "مرتبط بقطاع في السوق"
-    return "مش واضح ارتباطه بالبورصة"
-
-
-def _evidence_text(evidence) -> str | None:
-    return _public_text(evidence.translated_hint) or _public_text(evidence.text)
 
 
 def _percent(value: float) -> str:
