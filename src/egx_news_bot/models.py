@@ -74,3 +74,11 @@ class NewsImpactAssessment:
     needs_review: bool = True
     analysis_method: str = "rules"
     summary: str | None = None
+
+    @property
+    def impact_scope(self) -> str:
+        if self.stocks:
+            return "stock_related"
+        if self.sectors:
+            return "sector_only"
+        return "not_egx_related"

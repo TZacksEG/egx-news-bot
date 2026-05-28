@@ -15,7 +15,7 @@ Telegram bot that watches Egyptian business news and uses AI to estimate the lik
 - الخبر جاي منين
 - نوع الخبر: نتائج أعمال، استحواذ، تنظيم، أسعار طاقة، عقود، إلخ
 - القطاع اللي ممكن يستفيد أو يتضرر
-- السهم اللي ممكن يتأثر
+- السهم المصري المقيد اللي ممكن يتأثر، لو الخبر مرتبط بسهم حقيقي معروف
 - قوة تأثير الخبر من `0` لـ `100`
 - هل الخبر جيد ولا سيئ للسهم
 - إشارة عامة: أقرب للشراء/المتابعة، أقرب للبيع/تخفيف المخاطر، أو انتظار
@@ -23,9 +23,10 @@ Telegram bot that watches Egyptian business news and uses AI to estimate the lik
 ### إزاي يساعد المتداول؟
 
 - يلم الأخبار المهمة بسرعة بدل ما تتابع مواقع كتير يدوي
-- يربط الخبر بالقطاع والسهم المحتمل تأثره
+- يربط الخبر بقطاع حقيقي في البورصة المصرية وبسهم مقيد لما يكون فيه تطابق واضح
 - يديك درجة قوة وتأثير علشان تعرف هل الخبر يستاهل متابعة ولا لا
 - يعرض تصويت الجمهور على كل خبر: مفيد، مبالغ فيه، أو غير مؤثر
+- تنبيهات تيليجرام نفسها بتطلع بالمصري/العربي فقط، حتى لو الخبر الأصلي إنجليزي
 
 ### شكل التنبيه
 
@@ -33,8 +34,9 @@ Telegram bot that watches Egyptian business news and uses AI to estimate the lik
 تقرير تأثير الخبر على البورصة المصرية
 
 الخبر: طلعت مصطفى توقع عقد تطوير مشروع جديد بقيمة 20 مليار جنيه
-المصدر: Al Borsa News
-نوع الحدث: contract
+المصدر: جريدة البورصة
+نوع الحدث: عقد أو مشروع جديد
+صلة الخبر بالبورصة: مرتبط بسهم مقيد
 
 الحكم والتصرف
 التقييم: إيجابي للسهم
@@ -43,10 +45,10 @@ Telegram bot that watches Egyptian business news and uses AI to estimate the lik
 ملاحظة: ده تحليل آلي عام، مش توصية استثمارية شخصية.
 
 تأثير القطاعات
-Real Estate: مستفيد | درجة 76/100 | ثقة 85%
+العقارات: مستفيد | درجة 76/100 | ثقة 85%
 
 تأثير الأسهم
-TMGH: مستفيد | درجة 80/100 | ثقة 87%
+مجموعة طلعت مصطفى القابضة: مستفيد | درجة 80/100 | ثقة 87%
 ```
 
 ### التثبيت السريع
@@ -141,7 +143,7 @@ Each report shows:
 - news source and link
 - event type: earnings, acquisition, policy, energy prices, contracts, etc.
 - affected sector
-- affected EGX stock when detected
+- affected real EGX-listed stock when the bot can validate it against its stock universe
 - impact strength from `0` to `100`
 - whether the news looks good or bad for the stock
 - a general signal: closer to buy/watch, closer to sell/reduce risk, or wait
@@ -149,9 +151,10 @@ Each report shows:
 ### How can it help a trader?
 
 - saves time by scanning many Egyptian business sources automatically
-- connects news to possible EGX sectors and stocks
+- connects news to real EGX sectors and validated listed stocks
 - ranks news by impact strength
 - shows public vote counts on each alert: useful, exaggerated, or no market impact
+- posts the Telegram alert body in Egyptian Arabic only, even when the source article is English
 
 ### Quick Install
 

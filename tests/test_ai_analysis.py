@@ -11,9 +11,11 @@ from egx_news_bot.ai_analysis import (
     AIImpactAnalyzer,
     IMPACT_SCHEMA,
     OpenAIResponsesClient,
+    assessment_from_ai_payload,
     extract_response_text,
 )
 from egx_news_bot.analysis import ImpactAnalyzer
+from egx_news_bot.entities import CompanySeed, EntityRegistry
 from egx_news_bot.models import NewsDocument
 
 
@@ -33,7 +35,7 @@ def _document() -> NewsDocument:
 
 def _ai_payload() -> dict:
     return {
-        "summary": "Large real estate development contract with likely direct benefit to TMGH.",
+        "summary": "عقد تطوير كبير ممكن يدعم شركة طلعت مصطفى وقطاع العقارات.",
         "event_type": "contract",
         "market_wide": False,
         "needs_review": False,
@@ -44,12 +46,13 @@ def _ai_payload() -> dict:
                 "direction_score": 0.82,
                 "strength": 84,
                 "confidence": 0.86,
-                "rationale": "A large development contract can support backlog, presales, and sentiment.",
+                "rationale": "العقد الكبير ممكن يدعم المبيعات المتوقعة وثقة المستثمرين في القطاع.",
                 "evidence": [
                     {
                         "text": "عقد تطوير مشروع جديد بقيمة 20 مليار جنيه",
                         "location": "title",
                         "reason": "large_contract",
+                        "translated_hint": "عقد تطوير جديد بقيمة كبيرة.",
                     }
                 ],
             }
@@ -67,12 +70,13 @@ def _ai_payload() -> dict:
                 "confidence": 0.89,
                 "impact_type": "direct",
                 "horizon": "1d",
-                "rationale": "The company is named and the contract is financially material.",
+                "rationale": "الشركة مذكورة في الخبر وحجم العقد مؤثر.",
                 "evidence": [
                     {
                         "text": "طلعت مصطفى توقع عقد تطوير مشروع جديد",
                         "location": "title",
                         "reason": "named_company_contract",
+                        "translated_hint": "طلعت مصطفى وقعت عقد تطوير جديد.",
                     }
                 ],
             }
@@ -146,6 +150,10 @@ def test_openai_responses_client_posts_structured_schema_and_parses_json():
     assert body["text"]["format"]["type"] == "json_schema"
     assert body["text"]["format"]["strict"] is True
     assert body["input"][0]["role"] == "system"
+    assert "Egyptian Arabic only" in body["input"][0]["content"]
+    user_content = json.loads(body["input"][1]["content"])
+    assert "known_egx_universe" in user_content
+    assert any(stock["ticker"] == "TMGH" for stock in user_content["known_egx_universe"]["stocks"])
 
 
 def test_openai_responses_client_serializes_rule_hints_with_datetimes():
@@ -238,7 +246,7 @@ def test_ai_impact_analyzer_returns_ai_assessment_dataclasses():
     assessment = AIImpactAnalyzer(FakeClient()).analyze(_document())
 
     assert assessment.analysis_method == "ai"
-    assert assessment.summary == "Large real estate development contract with likely direct benefit to TMGH."
+    assert assessment.summary == "عقد تطوير كبير ممكن يدعم شركة طلعت مصطفى وقطاع العقارات."
     assert assessment.event_type == "contract"
     assert assessment.needs_review is False
     assert assessment.sectors[0].sector == "Real Estate"
@@ -246,3 +254,107 @@ def test_ai_impact_analyzer_returns_ai_assessment_dataclasses():
     assert assessment.stocks[0].ticker == "TMGH"
     assert assessment.stocks[0].strength == 88
     assert assessment.stocks[0].evidence[0].reason == "named_company_contract"
+
+
+def test_ai_payload_validation_keeps_only_real_registry_stocks_and_canonical_sector():
+    registry = EntityRegistry(
+        [
+            CompanySeed(
+                ticker="TMGH",
+                isin="EGS691S1C011",
+                name_ar="مجموعة طلعت مصطفى القابضة",
+                name_en="Talaat Moustafa Group Holding",
+                sector="Real Estate",
+                aliases=("طلعت مصطفى", "TMGH"),
+            )
+        ]
+    )
+    payload = _ai_payload()
+    payload["stocks"] = (
+        payload["stocks"]
+        + [
+            {
+                "ticker": "AAPL",
+                "isin": None,
+                "company_name_ar": "أبل",
+                "company_name_en": "Apple",
+                "sector": "Technology",
+                "direction": "beneficiary",
+                "direction_score": 0.5,
+                "strength": 90,
+                "confidence": 0.9,
+                "impact_type": "direct",
+                "horizon": "1d",
+                "rationale": "مش شركة مقيدة في مصر.",
+                "evidence": [],
+            }
+        ]
+    )
+    payload["sectors"] = [
+        {
+            **payload["sectors"][0],
+            "sector": "property",
+        }
+    ]
+
+    assessment = assessment_from_ai_payload(_document(), payload, registry=registry)
+
+    assert assessment.impact_scope == "stock_related"
+    assert [stock.ticker for stock in assessment.stocks] == ["TMGH"]
+    assert assessment.stocks[0].company_name_ar == "مجموعة طلعت مصطفى القابضة"
+    assert assessment.sectors[0].sector == "Real Estate"
+
+
+def test_ai_payload_validation_marks_unknown_global_news_as_not_egx_related():
+    document = NewsDocument(
+        external_id="global-1",
+        source_name="Global Source",
+        source_url="https://example.com/global",
+        title="Apple shares rise after US technology rally",
+        body="The story is about Wall Street technology stocks.",
+        language="en",
+        published_at=None,
+        credibility=0.7,
+    )
+    payload = {
+        "summary": "خبر عالمي مش مرتبط بسهم مصري مقيد.",
+        "event_type": "earnings_growth",
+        "market_wide": True,
+        "needs_review": False,
+        "sectors": [
+            {
+                "sector": "Technology",
+                "direction": "beneficiary",
+                "direction_score": 0.6,
+                "strength": 80,
+                "confidence": 0.9,
+                "rationale": "قطاع غير موجود في قائمة قطاعات البورصة المصرية.",
+                "evidence": [],
+            }
+        ],
+        "stocks": [
+            {
+                "ticker": "AAPL",
+                "isin": None,
+                "company_name_ar": "أبل",
+                "company_name_en": "Apple",
+                "sector": "Technology",
+                "direction": "beneficiary",
+                "direction_score": 0.6,
+                "strength": 85,
+                "confidence": 0.9,
+                "impact_type": "direct",
+                "horizon": "1d",
+                "rationale": "مش سهم مصري.",
+                "evidence": [],
+            }
+        ],
+    }
+
+    assessment = assessment_from_ai_payload(document, payload)
+
+    assert assessment.impact_scope == "not_egx_related"
+    assert assessment.stocks == ()
+    assert assessment.sectors == ()
+    assert assessment.needs_review is True
+    assert assessment.market_wide is False

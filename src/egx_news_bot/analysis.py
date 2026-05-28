@@ -75,7 +75,7 @@ class ImpactAnalyzer:
                 confidence=_confidence(document.credibility, entity_quality=mention.match_score, directness=1.0),
                 impact_type="direct",
                 horizon="1d",
-                rationale=f"Named company matched a {rule.event_type.replace('_', ' ')} event.",
+                rationale="الشركة مذكورة بوضوح في خبر له تأثير مباشر عليها.",
                 evidence=evidence,
             )
             for mention in mentioned
@@ -100,7 +100,7 @@ class ImpactAnalyzer:
                 direction_score=0.75,
                 strength=_bounded(72 + boost),
                 confidence=_confidence(document.credibility, entity_quality=0.8, directness=0.9),
-                rationale="Lower rates can reduce financing costs and support property demand.",
+                rationale="خفض الفائدة ممكن يقلل تكلفة التمويل ويدعم الطلب على العقارات.",
                 evidence=evidence,
             ),
             SectorImpact(
@@ -109,7 +109,7 @@ class ImpactAnalyzer:
                 direction_score=0.55,
                 strength=_bounded(62 + boost),
                 confidence=_confidence(document.credibility, entity_quality=0.75, directness=0.8),
-                rationale="Lower borrowing costs can support loan demand and asset prices.",
+                rationale="انخفاض تكلفة التمويل ممكن يدعم الطلب على التمويل وأسعار الأصول.",
                 evidence=evidence,
             ),
             SectorImpact(
@@ -118,7 +118,7 @@ class ImpactAnalyzer:
                 direction_score=0.05,
                 strength=_bounded(52 + boost // 2),
                 confidence=_confidence(document.credibility, entity_quality=0.75, directness=0.8),
-                rationale="Rate cuts can support credit growth while pressuring asset yields.",
+                rationale="خفض الفائدة ممكن يدعم نمو الائتمان لكنه يضغط على عوائد بعض الأصول.",
                 evidence=evidence,
             ),
         )
@@ -141,7 +141,7 @@ class ImpactAnalyzer:
                 direction_score=0.1,
                 strength=_bounded(58 + boost),
                 confidence=_confidence(document.credibility, entity_quality=0.75, directness=0.8),
-                rationale="Higher rates may support yields but can pressure credit growth and asset quality.",
+                rationale="رفع الفائدة ممكن يدعم العوائد لكنه يضغط على نمو الائتمان وجودة الأصول.",
                 evidence=evidence,
             ),
             SectorImpact(
@@ -150,7 +150,7 @@ class ImpactAnalyzer:
                 direction_score=-0.7,
                 strength=_bounded(72 + boost),
                 confidence=_confidence(document.credibility, entity_quality=0.75, directness=0.8),
-                rationale="Higher rates raise financing costs and can weaken property demand.",
+                rationale="رفع الفائدة بيزود تكلفة التمويل وممكن يضعف الطلب على العقارات.",
                 evidence=evidence,
             ),
         )
@@ -177,7 +177,7 @@ class ImpactAnalyzer:
                 direction_score=-0.75,
                 strength=_bounded(76 + _magnitude_boost(normalized)),
                 confidence=_confidence(document.credibility, entity_quality=0.75, directness=0.85),
-                rationale="Gas price increases can pressure energy-intensive producers.",
+                rationale="زيادة أسعار الغاز ممكن تضغط على الشركات كثيفة استهلاك الطاقة.",
                 evidence=evidence,
             ),
             SectorImpact(
@@ -186,7 +186,7 @@ class ImpactAnalyzer:
                 direction_score=-0.6,
                 strength=_bounded(68 + _magnitude_boost(normalized)),
                 confidence=_confidence(document.credibility, entity_quality=0.7, directness=0.8),
-                rationale="Higher fuel input costs can reduce industrial margins.",
+                rationale="ارتفاع تكلفة الوقود ممكن يقلل هوامش ربح الشركات الصناعية.",
                 evidence=evidence,
             ),
         )
@@ -198,7 +198,7 @@ class ImpactAnalyzer:
                 confidence=_confidence(document.credibility, entity_quality=mention.match_score, directness=0.9),
                 impact_type="direct",
                 horizon="1d",
-                rationale="Named company is exposed to the input-cost event.",
+                rationale="الشركة المذكورة معرضة لتغير تكلفة الطاقة في الخبر.",
                 evidence=evidence,
             )
             for mention in mentions
@@ -227,7 +227,7 @@ class ImpactAnalyzer:
                 confidence=_confidence(document.credibility, entity_quality=mention.match_score, directness=0.35),
                 impact_type="direct",
                 horizon="intraday",
-                rationale="Company was mentioned, but no material market event was classified.",
+                rationale="الشركة اتذكرت في الخبر لكن التأثير الاستثماري مش واضح.",
                 evidence=evidence,
             )
             for mention in mentions[:5]
@@ -277,7 +277,7 @@ def _sector_impacts_from_mentions(
                 direction_score=_direction_score(rule.sector_direction),
                 strength=strength,
                 confidence=_confidence(document.credibility, entity_quality=mention.match_score, directness=0.9),
-                rationale=f"{mention.sector} affected through named company exposure.",
+                rationale="القطاع متأثر من خلال الشركة المذكورة في الخبر.",
                 evidence=evidence,
             )
         )
@@ -352,4 +352,3 @@ def _evidence(text: str, location: str, reason: str) -> EvidenceSnippet:
 
 def _bounded(value: int) -> int:
     return max(0, min(100, value))
-

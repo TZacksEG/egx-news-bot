@@ -39,9 +39,9 @@ def _assessment(*, strength: int, needs_review: bool = False) -> NewsImpactAsses
         external_id="n1",
         source_name="source",
         source_url="https://example.com/n1",
-        title="market news",
+        title="خبر عن السوق المصري",
         body=None,
-        language="en",
+        language="ar",
         published_at=None,
         credibility=0.75,
     )
@@ -101,6 +101,82 @@ def test_send_telegram_from_poll_can_include_review_items():
 
     assert sent_count == 1
     assert notifier.sent == [review_assessment]
+
+
+def test_send_telegram_from_poll_rejects_not_egx_related_items():
+    notifier = FakeNotifier()
+    document = NewsDocument(
+        external_id="global-1",
+        source_name="source",
+        source_url="https://example.com/global",
+        title="US technology shares rise",
+        body=None,
+        language="en",
+        published_at=None,
+        credibility=0.75,
+    )
+    assessment = NewsImpactAssessment(
+        document=document,
+        event_type="unclassified",
+        sectors=(),
+        stocks=(),
+        market_wide=False,
+        needs_review=False,
+    )
+
+    sent_count = cli.send_telegram_from_poll(
+        poller=FakePoller((assessment,)),
+        notifier=notifier,
+        limit=10,
+        max_age_hours=72,
+        min_strength=0,
+        include_review=True,
+    )
+
+    assert sent_count == 0
+    assert notifier.sent == []
+
+
+def test_send_telegram_from_poll_rejects_global_sector_only_items():
+    notifier = FakeNotifier()
+    document = NewsDocument(
+        external_id="global-2",
+        source_name="source",
+        source_url="https://example.com/global-sector",
+        title="US banks report record profits",
+        body=None,
+        language="en",
+        published_at=None,
+        credibility=0.75,
+    )
+    sector = SectorImpact(
+        sector="Banks",
+        direction="beneficiary",
+        direction_score=0.7,
+        strength=90,
+        confidence=0.9,
+        rationale="قطاع عالمي مش مصري.",
+    )
+    assessment = NewsImpactAssessment(
+        document=document,
+        event_type="earnings_growth",
+        sectors=(sector,),
+        stocks=(),
+        market_wide=True,
+        needs_review=False,
+    )
+
+    sent_count = cli.send_telegram_from_poll(
+        poller=FakePoller((assessment,)),
+        notifier=notifier,
+        limit=10,
+        max_age_hours=72,
+        min_strength=65,
+        include_review=True,
+    )
+
+    assert sent_count == 0
+    assert notifier.sent == []
 
 
 def test_send_telegram_from_poll_rejects_non_positive_min_strength():

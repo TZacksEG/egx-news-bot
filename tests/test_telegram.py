@@ -1,4 +1,5 @@
 import json
+import re
 
 import httpx
 import pytest
@@ -41,22 +42,25 @@ def test_render_telegram_message_shows_news_impact_and_evidence():
 
     assert message.startswith("\u200fتقرير تأثير الخبر على البورصة المصرية")
     assert "طلعت مصطفى توقع عقد تطوير مشروع جديد بقيمة 20 مليار جنيه" in message
-    assert "نوع الحدث: contract" in message
-    assert "طريقة التحليل: rules" in message
+    assert "نوع الحدث: عقد أو مشروع جديد" in message
+    assert "طريقة التحليل" not in message
+    assert "الرابط:" not in message
     assert "تأثير عام على السوق: لا" in message
-    assert "مراجعة بشرية: لا" in message
+    assert "صلة الخبر بالبورصة: مرتبط بسهم مقيد" in message
+    assert "مراجعة بشرية" not in message
     assert "تأثير القطاعات" in message
-    assert "Real Estate: مستفيد | درجة 76/100 | ثقة 85%" in message
+    assert "العقارات: مستفيد | درجة 76/100 | ثقة 85%" in message
     assert "تأثير الأسهم" in message
-    assert "TMGH: مستفيد | درجة 80/100 | ثقة 87%" in message
+    assert "مجموعة طلعت مصطفى القابضة: مستفيد | درجة 80/100 | ثقة 87%" in message
     assert "التقييم: إيجابي للسهم" in message
     assert "إشارة عامة: أقرب للشراء/المتابعة، مش توصية شراء" in message
-    assert "ليه: Named company matched a contract event." in message
+    assert "ليه: الشركة مذكورة بوضوح في خبر له تأثير مباشر عليها." in message
     assert "الدليل:" in message
-    assert "المصدر: Manual Source" in message
-    assert "https://example.com/news/1" in message
+    assert "المصدر: مصدر اقتصادي" in message
+    assert "https://example.com/news/1" not in message
     assert "ملاحظة: ده تحليل آلي عام، مش توصية استثمارية شخصية." in message
     assert message.endswith(NEWS_SEPARATOR)
+    assert re.search(r"[A-Za-z]", message) is None
 
 
 def test_render_telegram_message_shows_negative_stock_signal_without_sell_advice():
@@ -115,11 +119,61 @@ def test_render_telegram_message_shows_negative_stock_signal_without_sell_advice
 
     message = render_telegram_message(assessment)
 
-    assert "ARCC: متضرر | درجة 74/100 | ثقة 83%" in message
+    assert "العربية للأسمنت: متضرر | درجة 74/100 | ثقة 83%" in message
     assert "التقييم: سلبي للسهم" in message
     assert "إشارة عامة: أقرب للبيع/تخفيف المخاطر، مش توصية بيع" in message
     assert "بيع" in message
+    assert "The company" not in message
+    assert "ARCC" not in message
     assert "التقييم: إيجابي للسهم" not in message
+    assert re.search(r"[A-Za-z]", message) is None
+
+
+def test_render_telegram_message_does_not_print_raw_english_news_fields():
+    evidence = EvidenceSnippet(
+        text="US banks report record profits",
+        normalized_text="us banks report record profits",
+        location="title",
+        reason="english_evidence",
+        translated_hint="أرباح قوية في قطاع بنوك عالمي.",
+    )
+    assessment = NewsImpactAssessment(
+        document=NewsDocument(
+            external_id="english-1",
+            source_name="Daily News Egypt",
+            source_url="https://example.com/english",
+            title="US banks report record profits",
+            body="Wall Street banks had a strong quarter.",
+            language="en",
+            published_at=None,
+            credibility=0.7,
+        ),
+        event_type="earnings_growth",
+        sectors=(
+            SectorImpact(
+                sector="Banks",
+                direction="beneficiary",
+                direction_score=0.5,
+                strength=45,
+                confidence=0.7,
+                rationale="تأثيره على البورصة المصرية غير مباشر.",
+                evidence=(evidence,),
+            ),
+        ),
+        stocks=(),
+        market_wide=False,
+        needs_review=True,
+        analysis_method="ai",
+        summary="خبر عالمي عن أرباح البنوك وتأثيره المحلي غير واضح.",
+    )
+
+    message = render_telegram_message(assessment)
+
+    assert "US banks" not in message
+    assert "Daily News Egypt" not in message
+    assert "https://example.com/english" not in message
+    assert "خبر عالمي عن أرباح البنوك وتأثيره المحلي غير واضح." in message
+    assert re.search(r"[A-Za-z]", message) is None
 
 
 def test_telegram_client_reads_required_config_from_env():
@@ -163,7 +217,7 @@ def test_telegram_client_posts_send_message_payload():
     assert payload == {
         "chat_id": "-100123",
         "text": "hello market",
-        "disable_web_page_preview": False,
+        "disable_web_page_preview": True,
     }
 
 
@@ -224,4 +278,4 @@ def test_telegram_notifier_sends_rendered_assessment_message():
 
     assert len(sent) == 1
     assert sent[0].startswith("\u200fتقرير تأثير الخبر على البورصة المصرية")
-    assert "TMGH: مستفيد" in sent[0]
+    assert "مجموعة طلعت مصطفى القابضة: مستفيد" in sent[0]

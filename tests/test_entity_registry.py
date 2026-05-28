@@ -1,4 +1,4 @@
-from egx_news_bot.entities import CompanySeed, EntityRegistry
+from egx_news_bot.entities import CompanySeed, EntityRegistry, canonical_sector
 from egx_news_bot.normalization import normalize_arabic
 
 
@@ -35,4 +35,11 @@ def test_entity_registry_resolves_arabic_and_english_aliases():
     assert [match.ticker for match in matches] == ["COMI", "TMGH"]
     assert matches[0].match_method == "alias"
     assert matches[0].match_score == 1.0
+    assert registry.find_company(ticker="TMGH.CA").name_ar == "مجموعة طلعت مصطفى القابضة"
+    assert registry.find_company(name_en="Commercial International Bank Egypt").ticker == "COMI"
 
+
+def test_canonical_sector_accepts_english_and_arabic_aliases():
+    assert canonical_sector("property") == "Real Estate"
+    assert canonical_sector("العقارات") == "Real Estate"
+    assert canonical_sector("Technology") is None

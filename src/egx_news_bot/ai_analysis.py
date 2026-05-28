@@ -9,6 +9,7 @@ from typing import Any, Mapping, Protocol
 import httpx
 
 from egx_news_bot.analysis import ImpactAnalyzer
+from egx_news_bot.entities import CompanySeed, EntityRegistry, canonical_sector, default_registry
 from egx_news_bot.models import (
     EvidenceSnippet,
     NewsDocument,
@@ -17,6 +18,7 @@ from egx_news_bot.models import (
     StockImpactCandidate,
 )
 from egx_news_bot.normalization import normalize_arabic
+from egx_news_bot.relevance import is_egypt_market_related
 
 
 class AIConfigError(ValueError):
@@ -114,14 +116,16 @@ class AIImpactAnalyzer:
         client: AIClient,
         *,
         rule_analyzer: ImpactAnalyzer | None = None,
+        registry: EntityRegistry | None = None,
     ) -> None:
+        self._registry = registry or default_registry()
         self._client = client
-        self._rule_analyzer = rule_analyzer or ImpactAnalyzer()
+        self._rule_analyzer = rule_analyzer or ImpactAnalyzer(self._registry)
 
     def analyze(self, document: NewsDocument) -> NewsImpactAssessment:
         rule_assessment = self._rule_analyzer.analyze(document)
         payload = self._client.analyze(document, rule_assessment)
-        return assessment_from_ai_payload(document, payload)
+        return assessment_from_ai_payload(document, payload, registry=self._registry)
 
 
 def extract_response_text(payload: dict[str, Any]) -> str:
@@ -153,24 +157,48 @@ def _response_error_detail(response: httpx.Response) -> str | None:
     return None
 
 
-def assessment_from_ai_payload(document: NewsDocument, payload: dict[str, Any]) -> NewsImpactAssessment:
-    sectors = tuple(_sector_from_payload(item) for item in payload.get("sectors", []))
-    stocks = tuple(_stock_from_payload(item) for item in payload.get("stocks", []))
+def assessment_from_ai_payload(
+    document: NewsDocument,
+    payload: dict[str, Any],
+    *,
+    registry: EntityRegistry | None = None,
+) -> NewsImpactAssessment:
+    company_registry = registry or default_registry()
+    stocks = tuple(
+        stock
+        for item in payload.get("stocks", [])
+        if (stock := _validated_stock_from_payload(item, company_registry)) is not None
+    )
+    sectors = tuple(
+        sector
+        for item in payload.get("sectors", [])
+        if (sector := _sector_from_payload(item)) is not None
+    )
+    sectors = _ensure_stock_sectors(sectors, stocks)
+    if not stocks and sectors and not is_egypt_market_related(document):
+        sectors = ()
+
+    needs_review = bool(payload.get("needs_review", True))
+    if not stocks and not sectors:
+        needs_review = True
     return NewsImpactAssessment(
         document=document,
-        event_type=str(payload.get("event_type") or "unclassified"),
+        event_type=str(payload.get("event_type") or "unclassified") if (stocks or sectors) else "unclassified",
         sectors=sectors,
         stocks=stocks,
-        market_wide=bool(payload.get("market_wide", False)),
-        needs_review=bool(payload.get("needs_review", True)),
+        market_wide=bool(payload.get("market_wide", False)) and bool(stocks or sectors),
+        needs_review=needs_review,
         analysis_method="ai",
         summary=str(payload["summary"]) if payload.get("summary") else None,
     )
 
 
-def _sector_from_payload(item: dict[str, Any]) -> SectorImpact:
+def _sector_from_payload(item: dict[str, Any]) -> SectorImpact | None:
+    sector = canonical_sector(str(item.get("sector") or ""))
+    if sector is None:
+        return None
     return SectorImpact(
-        sector=str(item.get("sector") or "Unknown"),
+        sector=sector,
         direction=_direction(item.get("direction")),
         direction_score=_float(item.get("direction_score"), 0.0, -1.0, 1.0),
         strength=_int(item.get("strength"), 0, 0, 100),
@@ -180,13 +208,25 @@ def _sector_from_payload(item: dict[str, Any]) -> SectorImpact:
     )
 
 
-def _stock_from_payload(item: dict[str, Any]) -> StockImpactCandidate:
-    return StockImpactCandidate(
+def _validated_stock_from_payload(item: dict[str, Any], registry: EntityRegistry) -> StockImpactCandidate | None:
+    company = registry.find_company(
         ticker=_optional_str(item.get("ticker")),
         isin=_optional_str(item.get("isin")),
-        company_name_ar=str(item.get("company_name_ar") or ""),
-        company_name_en=_optional_str(item.get("company_name_en")),
-        sector=str(item.get("sector") or "Unknown"),
+        name_ar=_optional_str(item.get("company_name_ar")),
+        name_en=_optional_str(item.get("company_name_en")),
+    )
+    if company is None:
+        return None
+    return _stock_from_payload(item, company)
+
+
+def _stock_from_payload(item: dict[str, Any], company: CompanySeed) -> StockImpactCandidate:
+    return StockImpactCandidate(
+        ticker=company.ticker,
+        isin=company.isin,
+        company_name_ar=company.name_ar,
+        company_name_en=company.name_en,
+        sector=company.sector,
         direction=_direction(item.get("direction")),
         direction_score=_float(item.get("direction_score"), 0.0, -1.0, 1.0),
         strength=_int(item.get("strength"), 0, 0, 100),
@@ -196,6 +236,26 @@ def _stock_from_payload(item: dict[str, Any]) -> StockImpactCandidate:
         rationale=str(item.get("rationale") or ""),
         evidence=tuple(_evidence_from_payload(evidence) for evidence in item.get("evidence", [])),
     )
+
+
+def _ensure_stock_sectors(
+    sectors: tuple[SectorImpact, ...],
+    stocks: tuple[StockImpactCandidate, ...],
+) -> tuple[SectorImpact, ...]:
+    by_sector = {sector.sector: sector for sector in sectors}
+    for stock in stocks:
+        if stock.sector in by_sector:
+            continue
+        by_sector[stock.sector] = SectorImpact(
+            sector=stock.sector,
+            direction=stock.direction,
+            direction_score=stock.direction_score,
+            strength=stock.strength,
+            confidence=stock.confidence,
+            rationale=stock.rationale,
+            evidence=stock.evidence,
+        )
+    return tuple(by_sector.values())
 
 
 def _evidence_from_payload(item: dict[str, Any]) -> EvidenceSnippet:
@@ -211,7 +271,7 @@ def _evidence_from_payload(item: dict[str, Any]) -> EvidenceSnippet:
 
 def _analysis_input(document: NewsDocument, rule_assessment: NewsImpactAssessment) -> str:
     data = {
-        "task": "Analyze this Egyptian-market news item for likely EGX stock and sector impact.",
+        "task": "Analyze this Egyptian-market news item for likely EGX stock and sector impact. Public text must be Egyptian Arabic only.",
         "document": {
             "source_name": document.source_name,
             "source_url": document.source_url,
@@ -221,6 +281,20 @@ def _analysis_input(document: NewsDocument, rule_assessment: NewsImpactAssessmen
             "published_at": document.published_at.isoformat() if document.published_at else None,
             "credibility": document.credibility,
             "tags": document.tags,
+        },
+        "known_egx_universe": {
+            "stocks": [
+                {
+                    "ticker": company.ticker,
+                    "isin": company.isin,
+                    "name_ar": company.name_ar,
+                    "name_en": company.name_en,
+                    "sector": company.sector,
+                    "aliases": company.aliases,
+                }
+                for company in default_registry().companies
+            ],
+            "sectors": default_registry().sectors(),
         },
         "rule_based_hints": asdict(rule_assessment),
         "scoring": {
@@ -275,6 +349,10 @@ If no concrete listed-stock or sector impact exists, return unclassified with lo
 Rules:
 - Do not provide investment advice or buy/sell instructions.
 - Prefer direct named-company impacts over broad speculation.
+- Only include a stock if it is clearly one of the known EGX-listed companies supplied in the user payload by ticker, ISIN, Arabic name, English name, or alias.
+- Only include sectors from the supplied EGX sector universe.
+- Public-facing free text fields must be Egyptian Arabic only: summary, rationale, and translated_hint. Do not write English phrases in these fields.
+- If the article is global news with no clear Egyptian market channel, return no stocks, no sectors, low strength, and needs_review=true.
 - Use evidence from the article title/body.
 - Keep scores conservative unless the news is company-specific, macro-material, or regulatory.
 - Return only JSON matching the schema.

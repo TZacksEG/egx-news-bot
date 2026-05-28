@@ -13,6 +13,7 @@ from egx_news_bot.analysis import ImpactAnalyzer
 from egx_news_bot.feedback import FeedbackStore, default_feedback_db_path
 from egx_news_bot.models import NewsDocument, NewsImpactAssessment
 from egx_news_bot.poller import FeedPoller, PollResult
+from egx_news_bot.relevance import is_egypt_market_related
 from egx_news_bot.telegram import (
     TelegramClient,
     TelegramConfig,
@@ -200,6 +201,10 @@ def _should_send_alert(
     min_strength: int,
     include_review: bool,
 ) -> bool:
+    if assessment.impact_scope == "not_egx_related":
+        return False
+    if assessment.impact_scope == "sector_only" and not is_egypt_market_related(assessment.document):
+        return False
     if assessment.needs_review and not include_review:
         return False
     return _assessment_strength(assessment) >= min_strength

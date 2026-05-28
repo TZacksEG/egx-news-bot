@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from os import environ
+import re
 from typing import Any, Mapping, Protocol
 
 import httpx
 
+from egx_news_bot.entities import canonical_sector
 from egx_news_bot.feedback import FeedbackRecord, FeedbackStore, VALID_FEEDBACK_ACTIONS
 from egx_news_bot.models import NewsImpactAssessment
 
@@ -24,6 +26,64 @@ _DIRECTION_LABELS = {
     "loser": "متضرر",
     "mixed": "مختلط",
     "neutral": "محايد",
+}
+_LATIN_RE = re.compile(r"[A-Za-z]")
+
+_EVENT_TYPE_LABELS = {
+    "contract": "عقد أو مشروع جديد",
+    "earnings_growth": "نمو أرباح",
+    "earnings_decline": "تراجع أرباح",
+    "earnings": "نتائج أعمال",
+    "dividend": "توزيعات أرباح",
+    "loss": "خسائر أو تراجع أرباح",
+    "trading_halt": "إيقاف تداول",
+    "interest_rate_cut": "خفض فائدة",
+    "interest_rate_hike": "رفع فائدة",
+    "gas_price_hike": "زيادة أسعار الغاز",
+    "merger_acquisition": "استحواذ أو اندماج",
+    "acquisition": "استحواذ",
+    "policy": "قرار أو تنظيم",
+    "unclassified": "غير مصنف",
+}
+_SECTOR_LABELS = {
+    "Banks": "البنوك",
+    "Basic Resources": "الموارد الأساسية",
+    "Chemicals": "الكيماويات",
+    "Construction and Materials": "المقاولات ومواد البناء",
+    "Education Services": "خدمات التعليم",
+    "Food, Beverages and Tobacco": "الأغذية والمشروبات",
+    "Healthcare and Pharmaceuticals": "الصحة والأدوية",
+    "Industrial Goods, Services and Automobiles": "الصناعة والسيارات",
+    "Industrials": "الصناعة",
+    "Non-bank Financial Services": "الخدمات المالية غير المصرفية",
+    "Real Estate": "العقارات",
+    "Shipping and Transportation Services": "النقل والشحن",
+    "Telecom": "الاتصالات",
+    "Travel and Leisure": "السياحة والترفيه",
+    "Utilities": "المرافق والطاقة",
+}
+_SOURCE_LABELS = {
+    "Arab Finance Banking": "عرب فاينانس",
+    "Arab Finance Real Estate": "عرب فاينانس",
+    "Arab Finance Industries": "عرب فاينانس",
+    "Arab Finance Macroeconomy": "عرب فاينانس",
+    "Arab Finance": "عرب فاينانس",
+    "Al Borsa News": "جريدة البورصة",
+    "Daily News Egypt": "ديلي نيوز إيجيبت",
+    "Enterprise AM": "إنتربرايز",
+    "Economy Plus": "إيكونومي بلس",
+    "Hapi Journal": "حابي",
+    "Mubasher EGX": "مباشر",
+    "Mubasher EGX English": "مباشر",
+    "Youm7 Economy": "اليوم السابع",
+    "Youm7 Bourse": "اليوم السابع",
+    "Masrawy Economy": "مصراوي",
+    "Masrawy Banking": "مصراوي",
+    "Amwal Al Ghad English": "أموال الغد",
+    "Egyptian Streets Business": "إيجيبشن ستريتس",
+    "Invest-Gate Real Estate": "إنفست جيت",
+    "Egypt Oil & Gas": "إيجيبت أويل آند جاس",
+    "Property Plus": "بروبرتي بلس",
 }
 
 
@@ -113,7 +173,7 @@ class TelegramClient:
         payload = {
             "chat_id": self._config.chat_id,
             "text": text,
-            "disable_web_page_preview": False,
+            "disable_web_page_preview": True,
         }
         if reply_markup is not None:
             payload["reply_markup"] = reply_markup
@@ -421,18 +481,17 @@ def _telegram_error_detail(response: httpx.Response) -> str | None:
 
 def render_telegram_message(assessment: NewsImpactAssessment) -> str:
     document = assessment.document
+    headline = _public_headline(assessment)
     lines = [
         "تقرير تأثير الخبر على البورصة المصرية",
         "",
-        f"الخبر: {document.title}",
-        f"المصدر: {document.source_name}",
-        f"الرابط: {document.source_url}",
-        f"نوع الحدث: {assessment.event_type}",
-        f"طريقة التحليل: {assessment.analysis_method}",
+        f"الخبر: {headline}",
+        f"المصدر: {_source_label(document.source_name)}",
+        f"نوع الحدث: {_event_type_label(assessment.event_type)}",
+        f"صلة الخبر بالبورصة: {_impact_scope_label(assessment.impact_scope)}",
         f"تأثير عام على السوق: {_yes_no(assessment.market_wide)}",
-        f"مراجعة بشرية: {_yes_no(assessment.needs_review)}",
     ]
-    if assessment.summary:
+    if assessment.summary and _is_public_arabic(assessment.summary) and assessment.summary != headline:
         lines.append(f"الملخص: {assessment.summary}")
 
     lines.extend(_recommendation_lines(assessment))
@@ -444,12 +503,14 @@ def render_telegram_message(assessment: NewsImpactAssessment) -> str:
     if assessment.stocks:
         lines.extend(["", "تأثير الأسهم"])
         for stock in assessment.stocks[:8]:
-            label = stock.ticker or stock.company_name_en or stock.company_name_ar
+            label = stock.company_name_ar or "شركة مصرية مقيدة"
             lines.append(
                 f"{label}: {_direction_label(stock.direction)} | درجة {stock.strength}/100 | "
                 f"ثقة {_percent(stock.confidence)}"
             )
-            lines.append(f"ليه: {stock.rationale}")
+            rationale = _public_text(stock.rationale)
+            if rationale:
+                lines.append(f"ليه: {rationale}")
 
     evidence = _first_evidence(assessment)
     if evidence:
@@ -461,7 +522,7 @@ def render_telegram_message(assessment: NewsImpactAssessment) -> str:
 
 def _sector_line(sector) -> str:
     return (
-        f"{sector.sector}: {_direction_label(sector.direction)} | درجة {sector.strength}/100 | "
+        f"{_sector_label(sector.sector)}: {_direction_label(sector.direction)} | درجة {sector.strength}/100 | "
         f"ثقة {_percent(sector.confidence)}"
     )
 
@@ -503,7 +564,7 @@ def _trading_signal(*, direction: str, strength: int, is_stock: bool) -> tuple[s
 
 
 def _direction_label(direction: str) -> str:
-    return _DIRECTION_LABELS.get(direction, direction)
+    return _DIRECTION_LABELS.get(direction, "غير واضح")
 
 
 def _yes_no(value: bool) -> str:
@@ -519,11 +580,63 @@ def _rtl(line: str) -> str:
 def _first_evidence(assessment: NewsImpactAssessment) -> str | None:
     for stock in assessment.stocks:
         if stock.evidence:
-            return stock.evidence[0].text
+            text = _evidence_text(stock.evidence[0])
+            if text:
+                return text
     for sector in assessment.sectors:
         if sector.evidence:
-            return sector.evidence[0].text
+            text = _evidence_text(sector.evidence[0])
+            if text:
+                return text
     return None
+
+
+def _public_headline(assessment: NewsImpactAssessment) -> str:
+    summary = _public_text(assessment.summary)
+    if summary:
+        return summary
+    title = _public_text(assessment.document.title)
+    if title:
+        return title
+    return "خبر اقتصادي مرتبط بالبورصة المصرية"
+
+
+def _public_text(value: str | None) -> str | None:
+    if not value:
+        return None
+    text = " ".join(value.split())
+    if not text or _LATIN_RE.search(text):
+        return None
+    return text
+
+
+def _is_public_arabic(value: str) -> bool:
+    return _public_text(value) is not None
+
+
+def _source_label(source_name: str) -> str:
+    return _SOURCE_LABELS.get(source_name, "مصدر اقتصادي")
+
+
+def _event_type_label(event_type: str) -> str:
+    return _EVENT_TYPE_LABELS.get(event_type, "حدث غير مؤكد")
+
+
+def _sector_label(sector: str) -> str:
+    canonical = canonical_sector(sector) or sector
+    return _SECTOR_LABELS.get(canonical, "قطاع غير مؤكد")
+
+
+def _impact_scope_label(scope: str) -> str:
+    if scope == "stock_related":
+        return "مرتبط بسهم مقيد"
+    if scope == "sector_only":
+        return "مرتبط بقطاع في السوق"
+    return "مش واضح ارتباطه بالبورصة"
+
+
+def _evidence_text(evidence) -> str | None:
+    return _public_text(evidence.translated_hint) or _public_text(evidence.text)
 
 
 def _percent(value: float) -> str:
