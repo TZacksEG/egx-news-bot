@@ -40,7 +40,8 @@ def _assessment():
 def test_render_telegram_message_shows_news_impact_and_evidence():
     message = render_telegram_message(_assessment())
 
-    assert message.startswith("\u200fتقرير تأثير الخبر على البورصة المصرية")
+    assert message.startswith("\u200fملخص الخبر:")
+    assert "تقرير تأثير الخبر على البورصة المصرية" in message
     assert "طلعت مصطفى توقع عقد تطوير مشروع جديد بقيمة 20 مليار جنيه" in message
     assert "نوع الحدث: عقد أو مشروع جديد" in message
     assert "طريقة التحليل" not in message
@@ -277,5 +278,6 @@ def test_telegram_notifier_sends_rendered_assessment_message():
     notifier.send_assessment(_assessment())
 
     assert len(sent) == 1
-    assert sent[0].startswith("\u200fتقرير تأثير الخبر على البورصة المصرية")
+    assert sent[0].startswith("\u200fملخص الخبر:")
+    assert "تقرير تأثير الخبر على البورصة المصرية" in sent[0]
     assert "مجموعة طلعت مصطفى القابضة: مستفيد" in sent[0]

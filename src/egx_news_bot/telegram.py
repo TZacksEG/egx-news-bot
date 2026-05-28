@@ -483,9 +483,9 @@ def render_telegram_message(assessment: NewsImpactAssessment) -> str:
     document = assessment.document
     headline = _public_headline(assessment)
     lines = [
-        "تقرير تأثير الخبر على البورصة المصرية",
+        f"ملخص الخبر: {headline}",
         "",
-        f"الخبر: {headline}",
+        "تقرير تأثير الخبر على البورصة المصرية",
         f"المصدر: {_source_label(document.source_name)}",
         f"نوع الحدث: {_event_type_label(assessment.event_type)}",
         f"صلة الخبر بالبورصة: {_impact_scope_label(assessment.impact_scope)}",
